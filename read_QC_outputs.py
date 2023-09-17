@@ -30,44 +30,65 @@ class Parser(ABC):
     def read_and_parse_file(self):
         pass
     
-    @abstractmethod
-    def calculate_sums(self, data):
-        pass
-    
-    @abstractmethod
-    def write_results(self, sums):
-        pass
-
-class QChem(Parser):
-    def read_and_parse_file(self):
-        filename = self.config.get("filename")
-        natoms = int(self.config.get("natoms", 0))
-        
-        with open(filename, 'r') as f:
-            lines = f.readlines()
-
-        count = 0
-
-        for i, line in enumerate(lines):
-            if "CDFT Becke Populations" in line:
-                count += 1
-                values = lines[i+3:i+3+natoms]
-                data = string2float(values)
-                sums = self.calculate_sums(data)
-                self.write_results(str(count),sums)
-
-    def calculate_sums(self, data):
+    def fragments_pop(self,n_dim,data):
         sums = {}
         n_fragments = int(self.config.get("n_fragments", 0))
         for i in range(1, n_fragments + 1):
             fragment_key = f"frag{i}"
             fragment_elements = list(map(lambda x: int(x) - 1, self.config.get(fragment_key).split()))
-            fragment_sums = [0, 0, 0]
+            fragment_sums = [0] * n_dim
             for element in fragment_elements:
-                for j in range(3):
+                for j in range(len(fragment_sums)):
                     fragment_sums[j] += data[element][j]
             sums[f"Frag {i}"] = fragment_sums
         return sums
+    
+    @abstractmethod
+    def write_results(self, sums):
+        pass
+
+    def write_header(self):
+        n_fragments = int(self.config.get("n_fragments", 0))
+        output_filename = self.config.get('output_file', 'output.dat')  # Default value is 'output.dat'
+        with open(output_filename, 'a+') as f:
+            f.write("#################################################################################\n")
+            f.write("\n")
+            f.write("                             Population Analysis \n")
+            f.write("\n")
+            f.write("#################################################################################\n")
+            f.write("\n")
+            f.write("Fragments definition:\n")
+            f.write("Number of fragments = %s \n" % n_fragments)
+            total_atoms = 0
+            for i in range(1, n_fragments + 1):
+                fragment_key = f"frag{i}"
+                n_atoms = len(self.config.get(fragment_key).split())
+                fragment_elements = list(map(lambda x: int(x), self.config.get(fragment_key).split()))
+                total_atoms += n_atoms
+                f.write("Fragment %s: %s atoms \n" %(i,n_atoms))
+                f.write("Atoms in Fragment %s: %s \n" %(i,fragment_elements))
+            f.write("Total number of atoms = %s \n" % total_atoms)
+            f.write("\n")
+            return
+
+class QChem(Parser):
+    def read_and_parse_file(self):
+        filename = self.config.get("filename")
+        natoms = int(self.config.get("natoms", 0))
+        n_properties = int(3) # CDFT(-CI) calc has 3 interesting properties 
+
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+
+        self.write_header()
+        count = 0
+        for i, line in enumerate(lines):
+            if "CDFT Becke Populations" in line:
+                count += 1
+                values = lines[i+3:i+3+natoms]
+                data = string2float(values)
+                sums = self.fragments_pop(n_properties,data)
+                self.write_results(str(count),sums)
 
     def write_results(self, count, sums):
         output_filename = self.config.get('output_file', 'output.dat')  # Default value is 'output.dat'
@@ -80,37 +101,62 @@ class QChem(Parser):
             f.write("\n")
         return
 
-class Molcas(Parser):
+class Turbomole(Parser):
     def read_and_parse_file(self):
         filename = self.config.get("filename")
         natoms = int(self.config.get("natoms", 0))
+        n_properties = int(1) # It will only read the charges
 
         with open(filename, 'r') as f:
             lines = f.readlines()
 
-        count = 0
+        self.write_header()
+        count = -1
+        for i, line in enumerate(lines):
+            if "Summary of Natural Population Analysis:" in line:
+                count += 1
+                values = lines[i+5:i+5+natoms]
+                data = string2float(values)
+                sums = self.fragments_pop(n_properties,data)
+                if count == 1:
+                    gs_sums = sums # Save the S0 charges 
 
+                if count > 0:
+                    self.write_results(str(count),gs_sums,sums)
+
+    def write_results(self, count, gs_sums, sums):
+        output_filename = self.config.get('output_file', 'output.dat')  # Default value is 'output.dat'
+        with open(output_filename, 'a+') as f:
+            f.write("         Natural Populations per fragment for State %s \n" % count)
+            f.write("-----------------------------------------------------------------------------------\n")
+            f.write("fragment         Natural Charge          St%s - S0 Nat. Charge diff\n" % count)
+#            for 
+            for frag, results in sums.items():
+                gs_results = gs_sums.get(frag, [0]*len(results))  # Defaults to a list of zeros if frag is not in GS_sums
+                difference = [result - gs_result for result, gs_result in zip(results, gs_results)]
+                f.write(f"{frag.ljust(15)} {results[0]:<25} {difference[0]:<25} \n")
+            f.write("\n")
+        return
+
+class Molcas_wfa(Parser):
+    def read_and_parse_file(self):
+        filename = self.config.get("filename")
+        natoms = int(self.config.get("natoms", 0))
+        n_properties = int(4)
+
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+
+        self.write_header()
+        count = 0
         for i, line in enumerate(lines):
             if "Lowdin Population Analysis" in line:
                 if len(lines[i+3].split()) > 3:
                     count += 1
                     values = lines[i+3:i+3+natoms]
                     data = string2float(values)
-                    sums = self.calculate_sums(data)
+                    sums = self.fragments_pop(n_properties, data)
                     self.write_results(str(count),sums)
-
-    def calculate_sums(self, data):
-        sums = {}
-        n_fragments = int(self.config.get("n_fragments", 0))
-        for i in range(1, n_fragments + 1):
-            fragment_key = f"frag{i}"
-            fragment_elements = list(map(lambda x: int(x) - 1, self.config.get(fragment_key).split()))
-            fragment_sums = [0, 0, 0, 0]
-            for element in fragment_elements:
-                for j in range(4):
-                    fragment_sums[j] += data[element][j]
-            sums[f"Frag {i}"] = fragment_sums
-        return sums
 
     def write_results(self, count, sums):
         output_filename = self.config.get('output_file', 'output.dat')  # Default value is 'output.dat'
@@ -138,8 +184,10 @@ if __name__ == '__main__':
             os.remove(output_file)
         if program_type == 'qchem':
             program = QChem(config)
-        elif program_type == 'molcas':
-            program = Molcas(config)
+        elif program_type == 'molcas_wfa':
+            program = Molcas_wfa(config)
+        elif program_type == 'turbomole':
+            program = Turbomole(config)
         else:
             print("Invalid program type specified in config.")
             exit()
