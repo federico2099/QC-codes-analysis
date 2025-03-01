@@ -1,0 +1,39 @@
+[DEFAULT]
+
+[QChem]
+program = qchem
+property = popul
+pop_filename = mh.out
+natoms = 44
+n_fragments = 2
+frag1 = 1-22
+frag2 = 23-44
+
+[TM]
+program = turbomole
+property = FCclasses
+filename = job.last.S1np
+hess_filename = Backup_hessian_S1np
+natoms = 14
+target_state = 1
+
+[Orca]
+program = orca
+property = energy
+filename = SP.out
+dir_prefix = step-
+num_dir = 15
+
+[Molcas]
+program = molcas
+property = osc_str
+dir_prefix = step-
+num_dir = 15
+method = xms-caspt2
+
+[G16]
+program = gaussian
+property = scan
+natoms = 34
+filename = geom.log
+output_file = scan.xyz

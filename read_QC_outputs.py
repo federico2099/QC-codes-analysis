@@ -22,6 +22,9 @@ def string2float(M):
     M = [[float(x) for x in row.split()[2:]] for row in M]
     return M
 
+class CustomError(Exception):
+    pass
+
 class Parser(ABC):
     def __init__(self, config):
         self.config = config
@@ -30,25 +33,41 @@ class Parser(ABC):
     def read_and_parse_file(self):
         pass
     
-    def fragments_pop(self,n_dim,data):
+    def get_fragment_elements(self,ifrag):
+        fragment_key = f"frag{ifrag}"
+        fragment_elements_config = self.config.get(fragment_key).split()
+        fragment_elements = []
+        for element in fragment_elements_config:
+            if '-' in element:
+                start, end = map(int, element.split('-'))
+                fragment_elements.extend(range(start, end + 1))
+            else:
+                fragment_elements.append(int(element))
+       
+        fragment_elements = [e - 1 for e in fragment_elements]  # Adjusting to 0-based index
+
+        return fragment_elements
+
+    def fragments_pop(self, n_dim, data):
         sums = {}
         n_fragments = int(self.config.get("n_fragments", 0))
         for i in range(1, n_fragments + 1):
-            fragment_key = f"frag{i}"
-            fragment_elements = list(map(lambda x: int(x) - 1, self.config.get(fragment_key).split()))
+            fragment_elements = self.get_fragment_elements(i)
             fragment_sums = [0] * n_dim
             for element in fragment_elements:
                 for j in range(len(fragment_sums)):
                     fragment_sums[j] += data[element][j]
             sums[f"Frag {i}"] = fragment_sums
+
         return sums
-    
+
     @abstractmethod
     def write_results(self, sums):
         pass
 
     def write_header(self):
         n_fragments = int(self.config.get("n_fragments", 0))
+        natoms = int(self.config.get("natoms",0))
         output_filename = self.config.get('output_file', 'output.dat')  # Default value is 'output.dat'
         with open(output_filename, 'a+') as f:
             f.write("#################################################################################\n")
@@ -62,13 +81,25 @@ class Parser(ABC):
             total_atoms = 0
             for i in range(1, n_fragments + 1):
                 fragment_key = f"frag{i}"
-                n_atoms = len(self.config.get(fragment_key).split())
-                fragment_elements = list(map(lambda x: int(x), self.config.get(fragment_key).split()))
-                total_atoms += n_atoms
-                f.write("Fragment %s: %s atoms \n" %(i,n_atoms))
+#                frag_atoms = len(self.config.get(fragment_key).split())
+                fragment_elements = self.get_fragment_elements(i)
+                fragment_elements = [x + 1 for x in fragment_elements]
+#                fragment_elements = list(map(lambda x: int(x), self.config.get(fragment_key).split()))
+                frag_atoms = len(fragment_elements)
+                total_atoms += len(fragment_elements)#frag_atoms
+                f.write("Fragment %s: %s atoms \n" %(i,frag_atoms))
                 f.write("Atoms in Fragment %s: %s \n" %(i,fragment_elements))
             f.write("Total number of atoms = %s \n" % total_atoms)
             f.write("\n")
+            if natoms > total_atoms:
+                f.write("!!!!!!!\n")
+                f.write("FYI: there are %s atoms missing in your fragments definition \n" %(natoms-total_atoms))
+                f.write("!!!!!!!\n")
+                f.write("\n")
+            elif natoms < total_atoms:
+                f.write("Your fragments definition contains %s more atoms than the total numeber of atoms in your system \n" %(total_atoms-natoms))
+                f.write("I'm dying... :-( \n")
+                raise CustomError("Your fragments definition contains more atoms than the total numeber of atoms in your system")
             return
 
 class QChem(Parser):
