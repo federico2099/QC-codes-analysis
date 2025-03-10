@@ -872,6 +872,7 @@ class Molcas(Prog):
 def read_Orca_energy(log,method):
     energies = []
 
+    disp = None
     reading = False
     count = 0
     nstates = -1
@@ -888,6 +889,11 @@ def read_Orca_energy(log,method):
             if line.startswith('STATE'):
                 count += 1
                 energies.append(float(line.split()[3])+energies[0])
+        if "Dispersion correction" in line:
+            disp = float(line.split()[2])
+
+    if disp is not None:
+        energies = [e + disp for e in energies]
 
     return energies
 
