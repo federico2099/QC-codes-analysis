@@ -19,10 +19,13 @@ target_state = 1
 
 [Orca]
 program = orca
-property = energy
-filename = SP.out
+property = FCclasses
+filename = Opt-Freq_S0.out
+hess_filename = Opt-Freq_S0.hess
+natoms = 29
 dir_prefix = step-
 num_dir = 15
+target_state = 1
 
 [Molcas]
 program = molcas

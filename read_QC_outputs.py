@@ -176,7 +176,7 @@ class Prog(ABC):
             'In' : {'at_num': 49,  'at_mass':  114.903878},
             'Sn' : {'at_num': 50,  'at_mass':  118.71    },
             'Sb' : {'at_num': 51,  'at_mass':  120.903818},
-                        'Te' : {'at_num': 52,  'at_mass':  129.906223},
+            'Te' : {'at_num': 52,  'at_mass':  129.906223},
             'I'  : {'at_num': 53,  'at_mass':  126.904468},
             'Xe' : {'at_num': 54,  'at_mass':  131.904154},
             'Cs' : {'at_num': 55,  'at_mass':  132.905447},
@@ -703,7 +703,7 @@ class Turbo(Prog):
         coord = self.coord(config,natoms)
         grad = self.gradient(config)
         hessian = self.hessian(config)
-
+#
         self.write_FCclasses_interface(natoms,energies[state],coord,grad,hessian)
         
         return
@@ -976,8 +976,94 @@ class Orca(Prog):
 
         return
 
+    def coord(self,config,natoms):
+        filename = config.get("filename")
+
+        with open(filename) as data:
+            lines = data.readlines()
+
+        coord = []
+
+        last_index = None
+        for n in range(len(lines) - 1, -1, -1): # reverse scan
+            if "CARTESIAN COORDINATES (ANGSTROEM)" in lines[n]:
+                last_index = n + 2
+                break
+
+        if last_index is None:
+            raise ValueError(f"Could not find Cartesian coordinates in the file {filename}.")
+
+        coord_lines = lines[last_index : last_index + natoms]
+        coord_lines = [x.split() for x in coord_lines]
+        atoms = [line[0] for line in coord_lines]
+        xyz = np.array([line[1:4] for line in coord_lines], dtype=float)
+        for i in range(natoms):
+            coord.append([atoms[i], xyz[i, 0], xyz[i, 1], xyz[i, 2]])
+
+        return coord
+
+    def gradient(self,config):
+        filename = config.get("filename")
+        with open(filename) as data:
+            lines = data.readlines()
+
+        grad = []
+
+        for n in range(len(lines) - 1, -1, -1): # reverse scan
+            if "CARTESIAN GRADIENT" in lines[n]:
+                orig_line = n + 3
+                break
+
+        if orig_line is None:
+            raise ValueError(f"Could not find Cartesian coordinates in the file {filename}.")
+
+        for line in lines[orig_line:]:
+            if len(line.split()) == 6:
+                atom_grads = [float(i) for i in line.split()[3:]]
+                grad = np.concatenate((grad,atom_grads))
+            else:
+                break
+
+        grad = np.array(grad)
+
+        return grad
+
+    def hessian(self,config):
+        hess_file = config.get("hess_filename")
+        with open(hess_file) as data:
+            hess_lines = data.read().splitlines()
+
+        hess = None
+        for n, line in enumerate(hess_lines):
+            if '$hessian' in line:
+                nmode = int(hess_lines[n + 1].split()[0])
+                nline = (nmode + 1) * (int(nmode / 5) + (nmode % 5 > 0))
+                vects = hess_lines[n + 2: n + 2 + nline]
+                nmodes = [[] for _ in range(nmode)]
+                for m, i in enumerate(vects):
+                    row = m % (nmode + 1) - 1
+                    if row >= 0:
+                        nmodes[row] += [float(j) for j in i.split()[1:]]
+                hess = np.array(nmodes).T.reshape((nmode, nmode))
+
+        if hess is None:
+            raise ValueError(f"Hessian data not found in the file {in_name}")
+
+        return hess
+
     def FCclasses(self,config):
-        pass
+        natoms = int(config.get("natoms"))
+        state = int(config.get("target_state"))
+        energies = self.energies(config)
+        if state < 0:
+            warnings.warn(f"The target state for the energy is {state} and it should be between 0 (GS) and {len(energies)-1}",UserWarning)
+        coord = self.coord(config,natoms)
+        grad = self.gradient(config)
+        hessian = self.hessian(config)
+
+        self.write_FCclasses_interface(natoms,energies[state],coord,grad,hessian)
+
+        return
 
     def scan(self,config):
         # Implement the logic to calculate or retrieve properties from scan
