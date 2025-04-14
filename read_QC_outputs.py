@@ -870,33 +870,35 @@ class Molcas(Prog):
         pass
 
 def read_Orca_energy(log,method):
-    energies = []
-
-    disp = None
+    disp = 0
     reading = False
     count = 0
     nstates = -1
+    energies = np.zeros(1)
+
     for line in log:
         if 'nroots' in line.lower():
             nstates = int(line.split()[-1])
+            energies = np.zeros(nstates + 1)
+            break
+
+    for line in log:
         if "TD-DFT/TDA EXCITED STATES" in line:
             reading = True
         if count == nstates:
             reading = False
+            count = 0
         if "Total Energy       :" in line:
-            energies.append(float(line.split()[3]))
+            energies[count] = float(line.split()[3])
         if reading:
             if line.startswith('STATE'):
                 count += 1
-                energies.append(float(line.split()[3])+energies[0])
-        if "Dispersion correction" in line:
+                energies[count] = float(line.split()[3]) + energies[0]
+        if "Dispersion correction" in line and len(line.split()) == 3:
             disp = float(line.split()[2])
 
-    if disp is not None:
-        energies = [e + disp for e in energies]
-
-    return energies
-
+    energies += disp
+    return energies.tolist()
 
 def read_Orca_osc_str(log):
 
@@ -953,7 +955,7 @@ class Orca(Prog):
 
         self.write_energies_to_file(energies, output_file)
 
-        return
+        return energies
 
     def osc_str(self,config):
         filename = config.get("filename")
@@ -1061,7 +1063,7 @@ class Orca(Prog):
         grad = self.gradient(config)
         hessian = self.hessian(config)
 
-        self.write_FCclasses_interface(natoms,energies[state],coord,grad,hessian)
+        self.write_FCclasses_interface(natoms,energies[0][state],coord,grad,hessian)
 
         return
 
