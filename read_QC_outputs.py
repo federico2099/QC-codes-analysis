@@ -883,7 +883,7 @@ def read_Orca_energy(log,method):
             break
 
     for line in log:
-        if "TD-DFT/TDA EXCITED STATES" in line:
+        if "TD-DFT/TDA EXCITED STATES" or "TD-DFT EXCITED STATES" in line:
             reading = True
         if count == nstates:
             reading = False
