@@ -915,7 +915,7 @@ def read_Orca_osc_str(log):
         raise ValueError("The line %s was not found in the output file." % osc_str_line)
     init_line = iline + 5
     for line in log[init_line:init_line+nstates]:
-        oos.append(float(line.split()[3]))
+        oos.append(float(line.split()[6]))
 #    oos = np.array(oos)
 
     return oos
