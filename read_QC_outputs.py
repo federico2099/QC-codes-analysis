@@ -869,6 +869,10 @@ class Molcas(Prog):
     def FCclasses(self,config):
         pass
 
+    def scan(self,config):
+        # Implement the logic to calculate or retrieve properties from scan
+        pass
+
 def read_Orca_energy(log,method):
     disp = 0
     reading = False
